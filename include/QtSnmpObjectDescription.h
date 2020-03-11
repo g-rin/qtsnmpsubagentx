@@ -1,1 +1,1 @@
-#include "../../src/QtSnmpObjectDescription.h"
+#include "../src/QtSnmpObjectDescription.h"
