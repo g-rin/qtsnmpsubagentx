@@ -12,7 +12,7 @@
 #include <signal.h>
 
 #ifndef QT_SNMP_SUBAGENT_DEBUG
-    // TODO: disable qDebug()
+    #undef qDebug
     #define qDebug QNoDebug
 #endif
 
@@ -113,7 +113,7 @@ bool QtSnmpSubagent::registerSnmpObject( const QtSnmpObjectDescription& descript
             }
 
             if ( ret_val ) {
-                oid*const oid_array = new oid[ oid_list.count() ];
+                oid*const oid_array = new oid[ static_cast< size_t >( oid_list.size() ) ];
                 for ( int i = 0; i < oid_list.count(); ++i ) {
                     oid_array[i] = oid_list.at( i );
                 }
@@ -161,11 +161,12 @@ bool QtSnmpSubagent::unregisterSnmpObject( const QString& oid_text ) {
         }
 
         if ( ret_val ) {
-            oid*const oid_array = new oid[ oid_list.count() ];
+            const auto size = static_cast< size_t >( oid_list.size() );
+            oid*const oid_array = new oid[ size ];
             for ( int i = 0; i < oid_list.count(); ++i ) {
                 oid_array[i] = oid_list.at( i );
             }
-            int res = unregister_mib( oid_array, static_cast< size_t >(oid_list.count()) );
+            int res = unregister_mib( oid_array, size );
             if ( MIB_UNREGISTERED_OK == res ) {
                 subagent->m_parameters.remove( oid_text );
                 qDebug() << "OID " << oid_text << "successfuly unregistred";
