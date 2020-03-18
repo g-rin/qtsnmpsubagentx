@@ -95,113 +95,118 @@ QtSnmpSubagent* QtSnmpSubagent::instance() {
 }
 
 bool QtSnmpSubagent::registerSnmpObject( const QtSnmpObjectDescription& description,
-                                       const QVariant& value )
+                                         const QVariant& value )
 {
-    bool ret_val = description.isValid();
-    if ( ret_val ) {
-        QtSnmpSubagent*const subagent = QtSnmpSubagent::instance();
-        if ( ! subagent->m_parameters.contains( description.oid() ) ) {
-            QList< oid > oid_list;
-            foreach( const QString& part, description.oid().split( ".", QString::SkipEmptyParts ) ) {
-                const oid val = part.toULong( &ret_val );
-                if ( ret_val ) {
-                    oid_list << val;
-                } else {
-                    qWarning() << Q_FUNC_INFO << "unable to parse oid:" << description.oid();
-                    break;
-                }
-            }
-
-            if ( ret_val ) {
-                oid*const oid_array = new oid[ static_cast< size_t >( oid_list.size() ) ];
-                for ( int i = 0; i < oid_list.count(); ++i ) {
-                    oid_array[i] = oid_list.at( i );
-                }
-
-                netsnmp_handler_registration*const ads_b_handler =
-                        netsnmp_create_handler_registration( qPrintable( description.oid() ),
-                                                             delayed_instance_handler,
-                                                             oid_array,
-                                                             static_cast< size_t >(oid_list.count()),
-                                                             HANDLER_CAN_RWRITE);
-                const int res = netsnmp_register_instance( ads_b_handler );
-                if ( MIB_REGISTERED_OK == res ) {
-                    subagent->m_parameters.insert( description.oid(), Parameter( description, value ) );
-                    qDebug() << "OID " << description.oid() << "successfully registered [" << value << "]";
-                } else {
-                    qWarning() << "unable to register OID " << description.oid();
-                }
-                memset( oid_array, 0, static_cast< size_t >( oid_list.size() ) );
-                delete[] oid_array;
-            }
-
-        } else {
-            qWarning() << Q_FUNC_INFO << "OID " << description.oid() << "already registered";
-        }
-    } else {
-        qWarning() << Q_FUNC_INFO << "unable to register object with incorrect description:" << description;
+    if ( not description.isValid() ) {
+        qWarning() << "Could not register object with an incorrect description:" << description;
+        return false;
     }
-    return ret_val;
+
+    if ( m_parameters.contains( description.oid() ) ) {
+        qWarning() << "OID " << description.oid() << " has been already registered";
+        return true;
+    }
+
+    bool ok;
+    QList< oid > oid_list;
+    for ( const auto& part : description.oid().split( ".", QString::SkipEmptyParts ) ) {
+        oid_list << part.toULong( &ok );
+        if ( not ok ) {
+            qWarning() << "Could not parse OID " << description.oid();
+            return false;
+        }
+    }
+
+    auto oid_array = new oid[ static_cast< size_t >( oid_list.size() ) ];
+    for ( int i = 0; i < oid_list.count(); ++i ) {
+        oid_array[i] = oid_list.at( i );
+    }
+
+    auto ads_b_handler = netsnmp_create_handler_registration(
+                             qPrintable( description.oid() ),
+                             delayed_instance_handler,
+                             oid_array,
+                             static_cast< size_t >(oid_list.count()),
+                             HANDLER_CAN_RWRITE);
+    const int res = netsnmp_register_instance( ads_b_handler );
+    delete[] oid_array;
+
+    if ( MIB_REGISTERED_OK != res ) {
+        qWarning() << "unable to register OID " << description.oid();
+        return false;
+    }
+
+    m_parameters.insert( description.oid(), Parameter( description, value ) );
+    qDebug() << "OID " << description.oid() << " has been successfully registered [" << value << "]";
+
+    return true;
 }
 
 bool QtSnmpSubagent::unregisterSnmpObject( const QString& oid_text ) {
-    bool ret_val = false;
-    QtSnmpSubagent*const subagent = QtSnmpSubagent::instance();
-    if ( subagent->m_parameters.contains( oid_text ) ) {
-
-        QList< oid > oid_list;
-        foreach( const QString& part, oid_text.split( ".", QString::SkipEmptyParts ) ) {
-            const oid val = part.toULong( &ret_val );
-            if ( ret_val ) {
-                oid_list << val;
-            } else {
-                qWarning() << Q_FUNC_INFO << "unable to parse oid:" << oid_text;
-                break;
-            }
-        }
-
-        if ( ret_val ) {
-            const auto size = static_cast< size_t >( oid_list.size() );
-            oid*const oid_array = new oid[ size ];
-            for ( int i = 0; i < oid_list.count(); ++i ) {
-                oid_array[i] = oid_list.at( i );
-            }
-            int res = unregister_mib( oid_array, size );
-            if ( MIB_UNREGISTERED_OK == res ) {
-                subagent->m_parameters.remove( oid_text );
-                qDebug() << "OID " << oid_text << "successfuly unregistred";
-                ret_val = true;
-            }
-        }
-    } else {
-        qWarning() << Q_FUNC_INFO << "OID " << oid_text << " is not registered";
+    auto iter = m_parameters.find( oid_text );
+    if ( m_parameters.end() == iter ) {
+        qWarning() << "OID " << oid_text << " is not registered";
+        return false;
     }
-    return ret_val;
+
+    bool ok;
+    QList< oid > oid_list;
+    for ( const auto& part : oid_text.split( ".", QString::SkipEmptyParts ) ) {
+        oid_list << part.toULong( &ok );
+        if ( not ok ) {
+            qWarning() << "Could not parse OID: " << oid_text;
+            return false;
+        }
+    }
+
+    const auto size = static_cast< size_t >( oid_list.size() );
+    auto oid_array = new oid[ size ];
+    for ( int i = 0; i < oid_list.count(); ++i ) {
+        oid_array[i] = oid_list.at( i );
+    }
+    const int res = unregister_mib( oid_array, size );
+    delete [] oid_array;
+
+    if ( MIB_UNREGISTERED_OK != res ) {
+        qWarning() << "Could not unregister OID: " << oid_text;
+        return false;
+    }
+
+    m_parameters.remove( oid_text );
+    qDebug() << "OID " << oid_text << " has been successfuly unregistred";
+    return true;
 }
 
 QVariant QtSnmpSubagent::value( const QString& oid ) const {
-    if ( m_initialized ) {
-        const auto iter = m_parameters.constFind( oid );
-        if ( m_parameters.constEnd() != iter ) {
-            return iter->value;
-        }
+    if ( not m_initialized ) {
+        return {};
     }
-    static QVariant empty;
-    return empty;
+
+    const auto iter = m_parameters.constFind( oid );
+    if ( m_parameters.constEnd() == iter ) {
+        return {};
+    }
+
+    return iter->value;
 }
 
 void QtSnmpSubagent::setValue( const QString& oid_text, const QVariant& value ) {
-    QHash< QString, Parameter >::iterator iter = m_parameters.find( oid_text );
-    if ( m_parameters.end() != iter ) {
-        if ( iter->description.checkValue( value ) ) {
-            iter->value = value;
-        } else {
-            Q_ASSERT( false );
-        }
-    } else {
-        qWarning() << Q_FUNC_INFO << "OID" << oid_text << "not registred";
+    auto iter = m_parameters.find( oid_text );
+    if ( m_parameters.end() == iter ) {
+        qWarning() << "OID" << oid_text << " has not been registred";
         Q_ASSERT( false );
+        return;
     }
+
+    if ( not iter->description.checkValue( value ) ) {
+        qWarning() << "Inappropriate value " << value
+                   << " for OID " << oid_text << " will be ignored.";
+        Q_ASSERT( false );
+        return;
+
+    }
+
+    iter->value = value;
 }
 
 void QtSnmpSubagent::start() {
@@ -218,86 +223,89 @@ void QtSnmpSubagent::start() {
 }
 
 int QtSnmpSubagent::agentCallbackGetValue( void*const pointer_to_request, const QString& oid_text ) {
-    netsnmp_request_info*const request  = static_cast< netsnmp_request_info* >( pointer_to_request );
-    QHash< QString, Parameter >::const_iterator iter = m_parameters.constFind( oid_text );
-    if ( m_parameters.constEnd() != iter ) {
-        switch ( iter->description.type() ) {
-        case QtSnmpObjectDescription::TypeEnum:
-        case QtSnmpObjectDescription::TypeInterger:
-            {
-                bool ok;
-                const long int_value = iter->value.toInt( &ok );
-                Q_ASSERT( ok );
-                snmp_set_var_typed_value( request->requestvb,
-                                          ASN_INTEGER,
-                                          &int_value,
-                                          sizeof( int_value ) );
-            }
-            break;
-        case QtSnmpObjectDescription::TypeUnsigned:
-            {
-                bool ok;
-                const long int_value = iter->value.toInt( &ok );
-                Q_ASSERT( ok );
-                snmp_set_var_typed_value( request->requestvb,
-                                          ASN_UNSIGNED,
-                                          &int_value,
-                                          sizeof( int_value ) );
-            }
-            break;
-        case QtSnmpObjectDescription::TypeReal:
-            {
-                bool ok;
-                const double value = iter->value.toDouble( &ok );
-                Q_ASSERT( ok );
-                const QString text_value = QString::number( value, 'g', 9 );
-                const QByteArray ba_value = text_value.toLocal8Bit();
-                snmp_set_var_typed_value( request->requestvb,
-                                          ASN_OCTET_STR,
-                                          ba_value.constData(),
-                                          static_cast< size_t >( ba_value.size() ) );
-            }
-            break;
-        case QtSnmpObjectDescription::TypeIpAddress:
-            {
-                const QHostAddress address( iter->value.toString() );
-                QByteArray ba_value;
-                QDataStream stream( &ba_value, QIODevice::WriteOnly );
-                stream.setVersion( QDataStream::Qt_4_5 );
-                stream << address.toIPv4Address();
-                snmp_set_var_typed_value( request->requestvb,
-                                          ASN_IPADDRESS,
-                                          ba_value.constData(),
-                                          static_cast< size_t >( ba_value.size() ) );
-            }
-            break;
-        case QtSnmpObjectDescription::TypeTimeTicks:
-            {
-                bool ok;
-                const long int_value = iter->value.toInt( &ok );
-                Q_ASSERT( ok );
-                snmp_set_var_typed_value( request->requestvb,
-                                          ASN_TIMETICKS,
-                                          &int_value,
-                                          sizeof( int_value ) );
-            }
-            break;
-        case QtSnmpObjectDescription::TypeString:
-            {
-                const QByteArray ba_value = iter->value.toString().toLocal8Bit();
-                snmp_set_var_typed_value( request->requestvb,
-                                          ASN_OCTET_STR,
-                                          ba_value.constData(),
-                                          static_cast< size_t >( ba_value.size() ) );
-            }
-            break;
-        default:
-            qWarning() << Q_FUNC_INFO << "unsupported type:"
-                       << static_cast< int >( iter->description.type() )
-                       << " (" << oid_text << ")";
-            break;
-        }
+    auto request  = static_cast< netsnmp_request_info* >( pointer_to_request );
+    auto iter = m_parameters.constFind( oid_text );
+    if ( m_parameters.constEnd() == iter ) {
+        return SNMP_ERR_NOSUCHNAME;
     }
+
+    switch ( iter->description.type() ) {
+    case QtSnmpObjectDescription::TypeEnum:
+    case QtSnmpObjectDescription::TypeInterger:
+        {
+            bool ok;
+            const long int_value = iter->value.toInt( &ok );
+            Q_ASSERT( ok );
+            snmp_set_var_typed_value( request->requestvb,
+                                      ASN_INTEGER,
+                                      &int_value,
+                                      sizeof( int_value ) );
+        }
+        break;
+    case QtSnmpObjectDescription::TypeUnsigned:
+        {
+            bool ok;
+            const long int_value = iter->value.toInt( &ok );
+            Q_ASSERT( ok );
+            snmp_set_var_typed_value( request->requestvb,
+                                      ASN_UNSIGNED,
+                                      &int_value,
+                                      sizeof( int_value ) );
+        }
+        break;
+    case QtSnmpObjectDescription::TypeReal:
+        {
+            bool ok;
+            const double value = iter->value.toDouble( &ok );
+            Q_ASSERT( ok );
+            const QString text_value = QString::number( value, 'g', 9 );
+            const QByteArray ba_value = text_value.toLocal8Bit();
+            snmp_set_var_typed_value( request->requestvb,
+                                      ASN_OCTET_STR,
+                                      ba_value.constData(),
+                                      static_cast< size_t >( ba_value.size() ) );
+        }
+        break;
+    case QtSnmpObjectDescription::TypeIpAddress:
+        {
+            const QHostAddress address( iter->value.toString() );
+            QByteArray ba_value;
+            QDataStream stream( &ba_value, QIODevice::WriteOnly );
+            stream.setVersion( QDataStream::Qt_4_5 );
+            stream << address.toIPv4Address();
+            snmp_set_var_typed_value( request->requestvb,
+                                      ASN_IPADDRESS,
+                                      ba_value.constData(),
+                                      static_cast< size_t >( ba_value.size() ) );
+        }
+        break;
+    case QtSnmpObjectDescription::TypeTimeTicks:
+        {
+            bool ok;
+            const long int_value = iter->value.toInt( &ok );
+            Q_ASSERT( ok );
+            snmp_set_var_typed_value( request->requestvb,
+                                      ASN_TIMETICKS,
+                                      &int_value,
+                                      sizeof( int_value ) );
+        }
+        break;
+    case QtSnmpObjectDescription::TypeString:
+        {
+            const QByteArray ba_value = iter->value.toString().toLocal8Bit();
+            snmp_set_var_typed_value( request->requestvb,
+                                      ASN_OCTET_STR,
+                                      ba_value.constData(),
+                                      static_cast< size_t >( ba_value.size() ) );
+        }
+        break;
+    default:
+        qWarning() << Q_FUNC_INFO << "unsupported type:"
+                   << static_cast< int >( iter->description.type() )
+                   << " (" << oid_text << ")";
+        break;
+    }
+
     return SNMP_ERR_NOERROR;
 }
 
