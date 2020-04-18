@@ -17,6 +17,8 @@ public:
         TypeIpAddress,
         TypeTimeTicks,
         TypeString,
+        TypeCounter,
+        TypeGauge,
 
         LimitOfTypes
     };

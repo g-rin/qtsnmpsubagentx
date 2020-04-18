@@ -253,6 +253,28 @@ int QtSnmpSubagent::agentCallbackGetValue( void*const pointer_to_request, const 
                                       sizeof( int_value ) );
         }
         break;
+    case QtSnmpObjectDescription::TypeCounter:
+        {
+            bool ok;
+            const long int_value = iter->value.toInt( &ok );
+            Q_ASSERT( ok );
+            snmp_set_var_typed_value( request->requestvb,
+                                      ASN_COUNTER,
+                                      &int_value,
+                                      sizeof( int_value ) );
+        }
+        break;
+    case QtSnmpObjectDescription::TypeGauge:
+        {
+            bool ok;
+            const long int_value = iter->value.toInt( &ok );
+            Q_ASSERT( ok );
+            snmp_set_var_typed_value( request->requestvb,
+                                      ASN_GAUGE,
+                                      &int_value,
+                                      sizeof( int_value ) );
+        }
+        break;
     case QtSnmpObjectDescription::TypeReal:
         {
             bool ok;
@@ -330,6 +352,16 @@ int QtSnmpSubagent::agentCallbackCheckTypeAndLen( void*const pointer_to_request,
                         request->requestvb,
                         ASN_UNSIGNED,
                         request->requestvb->val_len );
+        case QtSnmpObjectDescription::TypeCounter:
+            return netsnmp_check_vb_type_and_size(
+                        request->requestvb,
+                        ASN_COUNTER,
+                        request->requestvb->val_len );
+        case QtSnmpObjectDescription::TypeGauge:
+            return netsnmp_check_vb_type_and_size(
+                        request->requestvb,
+                        ASN_GAUGE,
+                        request->requestvb->val_len );
         case QtSnmpObjectDescription::TypeReal:
             return netsnmp_check_vb_type_and_size(
                         request->requestvb,
@@ -376,6 +408,8 @@ int QtSnmpSubagent::agentCallbackCheckValue( void*const pointer_to_request, cons
             }
             break;
         case QtSnmpObjectDescription::TypeUnsigned:
+        case QtSnmpObjectDescription::TypeCounter:
+        case QtSnmpObjectDescription::TypeGauge:
             {
                 long value = 0;
                 memcpy( &value, request->requestvb->val.integer, request->requestvb->val_len );
@@ -447,6 +481,8 @@ int QtSnmpSubagent::agentCallbackApplyChange( void*const pointer_to_request, con
             }
             break;
         case QtSnmpObjectDescription::TypeUnsigned:
+        case QtSnmpObjectDescription::TypeCounter:
+        case QtSnmpObjectDescription::TypeGauge:
             {
                 long value = 0;
                 memcpy( &value, request->requestvb->val.integer, request->requestvb->val_len );

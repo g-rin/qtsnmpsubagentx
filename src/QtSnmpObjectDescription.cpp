@@ -22,6 +22,8 @@ bool QtSnmpObjectDescription::isValid() const {
         res = res && !hasStep();
         break;
     case TypeUnsigned:
+    case TypeCounter:
+    case TypeGauge:
         res = res && !hasAvailableValues();
         break;
     case TypeReal:
@@ -66,6 +68,12 @@ static QDebug operator<<( QDebug stream, const QtSnmpObjectDescription::Type typ
         break;
     case QtSnmpObjectDescription::TypeUnsigned:
         stream << "TypeUnsigned";
+        break;
+    case QtSnmpObjectDescription::TypeCounter:
+        stream << "TypeCounter";
+        break;
+    case QtSnmpObjectDescription::TypeGauge:
+        stream << "TypeGauge";
         break;
     case QtSnmpObjectDescription::TypeReal:
         stream << "TypeReal";
@@ -133,6 +141,8 @@ bool QtSnmpObjectDescription::checkValue( const QVariant& value ) const {
         }
         break;
     case TypeUnsigned:
+    case TypeCounter:
+    case TypeGauge:
         res = value.canConvert( QVariant::UInt );
         if ( res && hasLimits() ) {
             const unsigned val = value.toUInt();
